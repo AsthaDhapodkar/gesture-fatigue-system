@@ -6,17 +6,17 @@ import {
   getSessionAnalytics,
   getHistoricalAnalytics 
 } from '../controllers/analyticsController.js';
-import { optionalAuth, authenticateToken } from '../middleware/auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Logging endpoints (guest and authenticated)
-router.post('/log/gesture', optionalAuth, logGesture);
-router.post('/log/fatigue', optionalAuth, logFatigue);
-router.post('/log/module', optionalAuth, logModuleUsage);
+router.post('/log/gesture', protect, logGesture);
+router.post('/log/fatigue', protect, logFatigue);
+router.post('/log/module', protect, logModuleUsage);
 
 // Analytics retrieval
-router.get('/session/:sessionId', optionalAuth, getSessionAnalytics);
-router.get('/history', authenticateToken, getHistoricalAnalytics);
+router.get('/session/:sessionId', protect, getSessionAnalytics);
+//router.get('/history', authenticateToken, getHistoricalAnalytics);
 
 export default router;

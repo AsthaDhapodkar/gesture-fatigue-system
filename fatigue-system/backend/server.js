@@ -1,22 +1,24 @@
+import './config/env.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 
 // Import routes
 import authRoutes from './routes/authRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+mongoose.connect(process.env.DATABASE_URL || 'mongodb+srv://astha:astha@cluster0.mox4ayf.mongodb.net/gestureApp?retryWrites=true&w=majority')
+
 // Security middleware
 app.use(helmet());
+app.use(cors());
+app.use(express.json());
 
 // CORS configuration
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];

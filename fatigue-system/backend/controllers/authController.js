@@ -1,109 +1,81 @@
-import bcrypt from 'bcrypt';
-import { query } from '../config/database.js';
-import { generateToken } from '../middleware/auth.js';
+import User from "../models/User.js";
+import bcrypt from "bcryptjs";
+import generateToken from "../utils/generateToken.js";
 
-const SALT_ROUNDS = 12;
-
-/**
- * User signup - creates new user account
- */
-export const signup = async (req, res) => {
-  const { email, password } = req.body;
-  
+// REGISTER
+export const registerUser = async (req, res) => {
   try {
-    // Check if user already exists
-    const existingUser = await query(
-      'SELECT id FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (existingUser.rows.length > 0) {
-      return res.status(409).json({ error: 'Email already registered' });
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "All fields required" });
     }
-    
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    
-    // Create user
-    const result = await query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, created_at',
-      [email, passwordHash]
-    );
-    
-    const user = result.rows[0];
-    
-    // Generate JWT token
-    const token = generateToken(user.id, user.email);
-    
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await User.create({
+      email,
+      password: hashedPassword,
+    });
+
     res.status(201).json({
-      message: 'User created successfully',
       user: {
-        id: user.id,
+        id: user._id,
         email: user.email,
-        createdAt: user.created_at
       },
-      token
+      token: generateToken(user._id),
     });
-  } catch (error) {
-    console.error('Signup error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+
+  } catch (err) {
+  console.log("REGISTER ERROR:", err);
+  res.status(500).json({ message: err.message });
+}
 };
 
-/**
- * User login - authenticates and returns JWT
- */
-export const login = async (req, res) => {
-  const { email, password } = req.body;
-  
+// LOGIN
+export const loginUser = async (req, res) => {
   try {
-    // Find user
-    const result = await query(
-      'SELECT id, email, password_hash, created_at FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    const user = result.rows[0];
-    
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Generate JWT token
-    const token = generateToken(user.id, user.email);
-    
-    res.json({
-      message: 'Login successful',
-      user: {
-        id: user.id,
-        email: user.email,
-        createdAt: user.created_at
-      },
-      token
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
+    let { email, password } = req.body;
 
-/**
- * Verify token - checks if current token is valid
- */
-export const verifyToken = async (req, res) => {
-  // If we reach here, token is valid (middleware already verified)
-  res.json({
-    valid: true,
-    user: {
-      id: req.user.userId,
-      email: req.user.email
+    // 1️⃣ Basic validation
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
     }
-  });
+
+    // 2️⃣ Normalize email (important!)
+    email = email.toLowerCase().trim();
+
+    // 3️⃣ Find user
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // 4️⃣ Compare password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // 5️⃣ Success response
+    return res.status(200).json({
+      user: {
+        id: user._id,
+        email: user.email,
+      },
+      token: generateToken(user._id),
+    });
+
+  } catch (err) {
+    console.error("Login Error:", err);
+    return res.status(500).json({ message: err.message });
+  }
 };
