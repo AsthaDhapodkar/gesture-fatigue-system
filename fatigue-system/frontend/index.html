@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Fatigue-aware gesture-controlled web application" />
+    <title>Gesture Control System — Fatigue Aware Interaction</title>
+
+    <!-- ─────────────────────────────────────────────
+         DESIGN TOKENS
+         All CSS variables consumed across the app.
+         Change here → updates everywhere.
+    ───────────────────────────────────────────── -->
+    <style>
+      :root {
+        /* Backgrounds */
+        --bg:          #0a0812;
+        --surface:     #100d1a;
+        --surface-2:   #16112a;
+
+        /* Borders */
+        --border:      rgba(255, 255, 255, 0.07);
+        --border-2:    rgba(255, 255, 255, 0.12);
+
+        /* Text */
+        --text:        #eae6ff;
+        --text-dim:    rgba(200, 190, 255, 0.4);
+        --text-faint:  rgba(200, 190, 255, 0.18);
+
+        /* Brand / accent */
+        --accent:      #7c3aed;
+        --accent-glow: rgba(124, 58, 237, 0.35);
+        --accent-dim:  rgba(124, 58, 237, 0.12);
+
+        /* Semantic */
+        --danger:      #f76a6a;
+        --success:     #6af7b4;
+        --warning:     #f7d96a;
+
+        /* Typography */
+        --sans: 'Inter', system-ui, -apple-system, sans-serif;
+        --mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+
+        /* Motion */
+        --transition: 0.18s ease;
+      }
+
+      /* ── Reset ─────────────────────────────── */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        /* Hide default cursor — GestureCursor replaces it */
+        cursor: none;
+      }
+
+      /* Restore cursor on text inputs so they're still usable */
+      input, textarea, [contenteditable] {
+        cursor: text;
+      }
+
+      /* ── Pre-React loading screen ──────────────
+         Shown while React + MediaPipe scripts load.
+         Hidden as soon as #root has children (React mounted).
+      ───────────────────────────────────────── */
+      #app-loader {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        z-index: 99999;
+        transition: opacity 0.4s ease;
+      }
+
+      #app-loader.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .loader-ring {
+        width: 40px;
+        height: 40px;
+        border: 2px solid rgba(124, 58, 237, 0.2);
+        border-top-color: #7c3aed;
+        border-radius: 50%;
+        animation: loaderSpin 0.9s linear infinite;
+      }
+
+      .loader-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        color: rgba(200, 190, 255, 0.35);
+      }
+
+      .loader-mediapipe {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: rgba(200, 190, 255, 0.2);
+      }
+
+      /* ── MediaPipe error banner ────────────────
+         Shown if CDN scripts fail to load.
+         App continues working — gesture just won't activate.
+      ───────────────────────────────────────── */
+      #mediapipe-error {
+        display: none;
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(247, 106, 106, 0.1);
+        border: 1px solid rgba(247, 106, 106, 0.3);
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: #f76a6a;
+        z-index: 99998;
+        white-space: nowrap;
+      }
+
+      #mediapipe-error.visible {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* ── Scrollbar styling ─────────────────── */
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(124, 58, 237, 0.3);
+        border-radius: 2px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(124, 58, 237, 0.6);
+      }
+
+      /* ── Global keyframes ──────────────────── */
+      @keyframes loaderSpin { to { transform: rotate(360deg); } }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.5; }
+        50%       { opacity: 1; }
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+
+  <body>
+    <!-- ── Pre-React loader ──────────────────────────────────────────── -->
+    <div id="app-loader">
+      <div class="loader-ring"></div>
+      <div class="loader-label">INITIALISING SYSTEM</div>
+      <div class="loader-mediapipe" id="loader-status">Loading MediaPipe…</div>
+    </div>
+
+    <!-- ── MediaPipe CDN error banner (hidden by default) ───────────── -->
+    <div id="mediapipe-error">
+      <span>⚠</span>
+      <span>MediaPipe failed to load — gesture control unavailable. Mouse/keyboard only.</span>
+    </div>
+
+    <!-- ── React root ────────────────────────────────────────────────── -->
+    <div id="root"></div>
+
+    <!-- ─────────────────────────────────────────────
+         MEDIAPIPE — loaded from CDN before React.
+         GestureEngine does dynamic imports, but loading
+         here ensures the global `Hands` / `Camera` objects
+         are available even if the npm packages are not bundled.
+         onerror handlers show the banner and let the app continue.
+    ───────────────────────────────────────────── -->
+    <script>
+      window.__mediapipeStatus = { hands: false, camera: false, drawing: false };
+    </script>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"
+      crossorigin="anonymous"
+      onload="window.__mediapipeStatus.camera = true; updateLoaderStatus();"
+      onerror="handleMediaPipeError('camera_utils');"
+    ></script>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"
+      crossorigin="anonymous"
+      onload="window.__mediapipeStatus.drawing = true; updateLoaderStatus();"
+      onerror="handleMediaPipeError('drawing_utils');"
+    ></script>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"
+      crossorigin="anonymous"
+      onload="window.__mediapipeStatus.hands = true; updateLoaderStatus();"
+      onerror="handleMediaPipeError('hands');"
+    ></script>
+
+    <!-- ── Loader + error logic ──────────────────────────────────────── -->
+    <script>
+      // Update the loader label as each MediaPipe script loads
+      function updateLoaderStatus() {
+        const s = window.__mediapipeStatus;
+        const loaded = [s.camera, s.drawing, s.hands].filter(Boolean).length;
+        const el = document.getElementById('loader-status');
+        if (el) {
+          el.textContent = loaded === 3
+            ? 'MediaPipe ready ✓'
+            : `MediaPipe loading… (${loaded}/3)`;
+        }
+      }
+
+      // If a CDN script fails, show the error banner but don't block the app
+      function handleMediaPipeError(pkg) {
+        console.warn(`[GestureOS] MediaPipe CDN failed to load: ${pkg}. Gesture control will be unavailable.`);
+        const banner = document.getElementById('mediapipe-error');
+        if (banner) banner.classList.add('visible');
+        const el = document.getElementById('loader-status');
+        if (el) el.textContent = 'MediaPipe unavailable — gesture control disabled';
+      }
+
+      // Hide the loader once React has mounted (#root has children)
+      // Uses a MutationObserver so we don't need to modify App.jsx
+      const observer = new MutationObserver(() => {
+        if (document.getElementById('root')?.children.length > 0) {
+          const loader = document.getElementById('app-loader');
+          if (loader) {
+            loader.classList.add('hidden');
+            // Remove from DOM after fade completes
+            setTimeout(() => loader.remove(), 500);
+          }
+          observer.disconnect();
+        }
+      });
+
+      observer.observe(document.getElementById('root'), { childList: true });
+    </script>
+
+    <!-- ── React entry ───────────────────────────────────────────────── -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
